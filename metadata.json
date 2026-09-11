@@ -1,0 +1,6 @@
+{
+  "name": "정서 지원 AI 대화 로봇",
+  "description": "독거인의 외로움을 해소하고 정서적 안정을 돕는 인공지능 말벗 대화 로봇 서비스입니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
