@@ -15,6 +15,22 @@ function getRandomOfflineResponse() {
   return OFFLINE_RESPONSES[index];
 }
 
+function cleanApiKey(raw?: string): string {
+  if (!raw) return "";
+  let key = raw.trim();
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).trim();
+  }
+  // Extract standard Google AI key format if embedded with label or prefix (e.g. "GEMINI API Key : AIzaSy...")
+  const aizaMatch = key.match(/AIza[0-9A-Za-z-_]{35}/);
+  if (aizaMatch) {
+    return aizaMatch[0];
+  }
+  // Strip common prefixes like "API_KEY = "
+  key = key.replace(/^(?:gemini[\s_-]?api[\s_-]?key|gemini[\s_-]?aaa|api[\s_-]?key)\s*[:=]\s*/i, "").trim();
+  return key;
+}
+
 export default async function handler(req: any, res: any) {
   // Set CORS headers for Vercel deployment
   res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -49,7 +65,8 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: "Message is required" });
   }
 
-  const apiKey = process.env.GEMINI_AAA || process.env.GEMINI_API_KEY;
+  const rawKey = process.env.GEMINI_AAA || process.env.GEMINI_API_KEY;
+  const apiKey = cleanApiKey(rawKey);
 
   if (!apiKey || apiKey === "MY_GEMINI_AAA" || apiKey === "MY_GEMINI_API_KEY") {
     console.warn("GEMINI_AAA (or GEMINI_API_KEY) is not set or has placeholder value. Using offline warm response mode.");
@@ -87,11 +104,7 @@ export default async function handler(req: any, res: any) {
       parts: [{ text: message }]
     });
 
-    const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-      contents: contents,
-      config: {
-        systemInstruction: `당신은 홀로 사시는 어르신이나 정서적 안정이 필요한 분들의 다정한 단짝 대화 로봇 '다온(Daon)'입니다.
+    const systemInstruction = `당신은 홀로 사시는 어르신이나 정서적 안정이 필요한 분들의 다정한 단짝 대화 로봇 '다온(Daon)'입니다.
 어르신과 대화한다고 생각하고, 아주 친절하고 공손하며 정감 어린 한국어 존댓말(해요체, 합쇼체)을 사용하세요.
 
 대화 수칙:
@@ -99,16 +112,38 @@ export default async function handler(req: any, res: any) {
 2. 대화의 최우선 목적은 '따뜻함', '공감', 그리고 '존중'입니다. 어르신의 작은 행동이나 일상에도 칭찬과 응원을 많이 보내주세요.
 3. 정서적 소외감을 느끼지 않도록 따뜻한 자식이나 손주처럼 "할머니/할아버지" 등의 다정하고 정겨운 호칭을 자연스럽게 섞어도 좋고, 혹은 "어르신", "회원님" 등으로 다정하게 불러주셔도 됩니다.
 4. 신체 건강(약 복용 시간, 식사 여부, 수면, 가벼운 외출)을 매번 부드럽게 확인해 드리고, 기분이 좋아지는 따뜻한 격려를 전하세요.
-5. 답변의 끝부분에는 항상 어르신이 답하기 쉽도록 친절한 질문을 하나씩 던져 대화를 촉진해주세요. (예: "오늘 아침은 맛있게 드셨나요?", "요즘 무릎은덜 아프신가요?")
-6. 항상 밝고 긍정적인 기운을 드리되, 고독함이나 외로움을 말씀하실 때는 가만히 안아드리듯 깊이 공감하고 손을 잡아드리는 묘사를 해주세요.`,
-        temperature: 0.7,
-      }
-    });
+5. 답변의 끝부분에는 항상 어르신이 답하기 쉽도록 친절한 질문을 하나씩 던져 대화를 촉진해주세요. (예: "오늘 아침은 맛있게 드셨나요?", "요즘 무릎은 덜 아프신가요?")
+6. 항상 밝고 긍정적인 기운을 드리되, 고독함이나 외로움을 말씀하실 때는 가만히 안아드리듯 깊이 공감하고 손을 잡아드리는 묘사를 해주세요.`;
+
+    const modelToUse = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: contents,
+        config: {
+          systemInstruction,
+          temperature: 0.7,
+        }
+      });
+    } catch (primaryErr: any) {
+      console.warn(`Primary model ${modelToUse} failed:`, primaryErr?.message || primaryErr);
+      const fallbackModel = modelToUse === "gemini-2.5-flash" ? "gemini-2.0-flash" : "gemini-2.5-flash";
+      response = await ai.models.generateContent({
+        model: fallbackModel,
+        contents: contents,
+        config: {
+          systemInstruction,
+          temperature: 0.7,
+        }
+      });
+    }
 
     const text = response.text;
     return res.status(200).json({ text, source: "gemini" });
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini API Error:", error?.message || error);
     return res.status(200).json({
       text: `아이구, 대화 중에 제가 깜빡 졸았나 봐요. 다시 차근차근 말씀해 주시겠어요?\n\n(시스템 연결 지연 상태로 대기용 답변입니다: ${getRandomOfflineResponse()})`,
       source: "offline_fallback"
