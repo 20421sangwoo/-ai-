@@ -37,14 +37,14 @@ async function startServer() {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_AAA || process.env.GEMINI_API_KEY;
 
-    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-      console.warn("GEMINI_API_KEY is not set or has placeholder value. Using offline warm response mode.");
+    if (!apiKey || apiKey === "MY_GEMINI_AAA" || apiKey === "MY_GEMINI_API_KEY") {
+      console.warn("GEMINI_AAA (or GEMINI_API_KEY) is not set or has placeholder value. Using offline warm response mode.");
       // Simulated delays for highly natural feeling
       await new Promise(resolve => setTimeout(resolve, 800));
       return res.json({
-        text: `[알림: 데모 모드로 동작 중입니다. API 키가 설정되지 않았으나 따뜻한 반려봇 다온이가 대답해 드릴게요!]\n\n${getRandomOfflineResponse()}`,
+        text: `[알림: 데모 모드로 동작 중입니다. GEMINI_AAA 환경 변수가 설정되지 않았으나 따뜻한 반려봇 다온이가 대답해 드릴게요!]\n\n${getRandomOfflineResponse()}`,
         source: "offline"
       });
     }
@@ -80,7 +80,7 @@ async function startServer() {
       });
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
         contents: contents,
         config: {
           systemInstruction: `당신은 홀로 사시는 어르신이나 정서적 안정이 필요한 분들의 다정한 단짝 대화 로봇 '다온(Daon)'입니다.
